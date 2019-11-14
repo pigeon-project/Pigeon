@@ -1,7 +1,5 @@
 ﻿module Ast
 
-open System.Text.Json
-open System.Text.Json.Serialization
 open System.IO
 open Context
 
@@ -79,4 +77,5 @@ let LoadAst filepath =
     0
 
 let DumpAst filepath ast =
-    File.WriteAllText(filepath, JsonSerializer.Serialize(ast))
+    0
+    //File.WriteAllText(filepath, JsonSerializer.Serialize(ast))

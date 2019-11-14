@@ -6,5 +6,5 @@ open Ast
 [<EntryPoint>]
 let main argv =
     printfn "Hello World from F#!"
-    Ast.DumpAst "test.past.json" (0 :> obj, "str" :> obj)
+    //Ast.DumpAst "test.past.json" (0 :> obj, "str" :> obj)
     0
