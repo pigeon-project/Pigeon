@@ -1,32 +1,5 @@
 ﻿module Ast
 
-open System.IO
-open Context
-
-(*
-type Const =
-    | Bool      of bool
-    | Char      of char
-    | Int       of uint64
-    | Float     of double
-    | String    of string
-
-type GAstNode =
-    | Unknow
-    | Symbol    of string
-    | Const     of Const
-    | SubTree   of GAstNode list
-
-type GAst =
-    class
-        val Name: string
-        val Attributes: GAst list
-        val SubTree: obj list
-    end
-
-//type GAst = obj list
-*)
-
 type TypeExpr =
     | TypeApply of string * TypeExpr list
     | UnionType of string * TypeExpr list
@@ -35,9 +8,7 @@ type TypeExpr =
     | Callable  of TypeExpr list
     | TypeName  of string
 
-type TypeDef =
-    | TypeAlias of string * string
-    | NewType   of string * TypeExpr
+type TypeAssert = string * TypeExpr
 
 type Pattern = unit
 
@@ -50,25 +21,26 @@ type LiteralValue =
     | String    of string
 
 type Expr =
-    | FuncCall  of Expr * Expr list
-    | Cond      of (Expr * Expr) list
-    | Match     of (Pattern * Expr option * Expr) list
-    | Loop      of                  Expr list
-    | While     of           Expr * Expr list
-    | For       of Pattern * Expr * Expr list
-    | LetIn     of Pattern * Expr * Expr List
-    | Let       of Pattern * Expr
-    | Literal   of LiteralValue
-    | Symbol    of string
+    | NewClosure    of Pattern list * Expr list
+    | FuncCall      of Expr * Expr list
+    | Cond          of (Expr * Expr) list
+    | Match         of (Pattern * Expr option * Expr) list
+    | Loop          of                  Expr list
+    | While         of           Expr * Expr list
+    | For           of Pattern * Expr * Expr list
+    | LetIn         of Pattern * Expr * Expr List
+    | Let           of Pattern * Expr
+    | Literal       of LiteralValue
+    | Symbol        of string
 
-type FuncDef = string * Pattern list * Expr list
+type FuncDef = string * string list * Expr list
 
 type TopLevel =
     | Comment       of string
-    | Typedef       of TypeDef
+    | TypeAssert    of TypeAssert
     | Funcdef       of FuncDef
-    | TypeAssert    of string * TypeExpr
     | Let           of Pattern * Expr
+    | Do            of Expr list
 
 let Ast2Gast = 0
 let Gast2Ast = 0

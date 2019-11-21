@@ -6,8 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Context.fs" />
     <Compile Include="Ast.fs" />
+    <Compile Include="Context.fs" />
+    <Compile Include="TypeCheck.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
