@@ -1,4 +1,4 @@
-﻿module AST
+﻿module Ast
 
 //type TypeExpr =
 //    | TypeApply of string * TypeExpr list
@@ -50,24 +50,13 @@ type Expr =
 //    | Let           of Pattern * Expr
 //    | Do            of Expr list
 
-// TODO: 以下不知道干啥的? 请注释
-let Ast2Gast = 0
-let Gast2Ast = 0
-
-let LoadAst filepath =
-    0
-
-let DumpAst filepath ast =
-    0
-    //File.WriteAllText(filepath, JsonSerializer.Serialize(ast))
-
 type Id = int
 type Level = int
 
 type TypeExpr =
     | TConst of Name (*就像Int Bool这种*)
     | TApp of TypeExpr * TypeExpr list
-    | TArrow of TypeExpr list * TypeExpr
+    | TArrow of TypeExpr list// * TypeExpr
     | TVar of TVar ref
     | TRow of TypeExpr (*只使用RowEmpt和RowExtend*)
     | TRowEmpt
@@ -76,7 +65,5 @@ and TVar =
     | Unbound of Id * Level
     | Link of TypeExpr (*TypeExpr 垃圾F#*)
     | Generic of Id
-// FIXME: Env 被吃掉了
-//type TypeAssert = string * TypeExpr
 
 (*请自己写tostr*)    
