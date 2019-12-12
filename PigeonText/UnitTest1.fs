@@ -2,6 +2,8 @@ module PigeonText
 
 open NUnit.Framework
 
+open Ast
+
 [<SetUp>]
 let Setup () =
     ()

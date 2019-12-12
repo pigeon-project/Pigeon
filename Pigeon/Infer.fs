@@ -29,9 +29,8 @@ let check_error tvar_id tvar_level ty =
         | TApp(ty,ty_args) ->
             f ty
             List.iter f ty_args
-        | TArrow(ty_params,ret_ty) ->
+        | TArrow(ty_params) ->
             List.iter f ty_params
-            f ret_ty
         | TRow r -> f r
         | TRowExtend(lab,field_ty,row) -> f field_ty;f row
         | TConst _ -> ()
@@ -46,9 +45,9 @@ let rec unifier ty1 ty2 =
             | TApp(ty1,ty_args1),TApp(ty2,ty_args2) ->
                 unifier ty1 ty2;
                 List.iter2 unifier ty_args1 ty_args2
-            | TArrow(ty_params1,ret_ty1),TArrow(ty_params2,ret_ty2) ->
+            | TArrow(ty_params1),TArrow(ty_params2) ->
                 List.iter2 unifier ty_params1 ty_params2
-                unifier ret_ty1 ret_ty2
+                //unifier ret_ty1 ret_ty2
             | TRow r1,TRow r2 -> unifier r1 r2
             | TRowEmpt,TRowEmpt -> ()
             | TVar({contents = Link ty1}),ty2 | ty1,TVar({contents = Link ty2})-> unifier ty1 ty2
@@ -93,8 +92,8 @@ let rec generalize level x =
             TVar (ref (Generic id))
     | TApp(ty, ty_arg_list) ->
             TApp(generalize level ty, List.map (generalize level) ty_arg_list)
-    | TArrow(param_ty_list, return_ty) ->
-            TArrow(List.map (generalize level) param_ty_list, generalize level return_ty)
+    | TArrow(param_ty_list) ->
+            TArrow(List.map (generalize level) param_ty_list)
     | TVar {contents = Link ty} -> generalize level ty
     | TRow row -> TRow (generalize level row)
     | TRowExtend(label, field_ty, row) ->
@@ -119,19 +118,20 @@ let instantiate level ty =
             | TVar {contents = Unbound _} -> ty
             | TApp(ty, ty_arg_list) ->
                 TApp(f ty, List.map f ty_arg_list)
-            | TArrow(param_ty_list, return_ty) ->
-                TArrow(List.map f param_ty_list, f return_ty)
+            | TArrow(fun_ty_list) ->
+                TArrow(List.map f fun_ty_list)
             | TRow row -> TRow (f row)
             | TRowEmpt -> ty
             | TRowExtend(label, field_ty, row) ->
                         TRowExtend(label, f field_ty, f row)
             in f ty
 
+(*
 let rec match_fun_ty num_params x =
     match x with
     | TArrow(param_ty_list, return_ty) ->
             if List.length param_ty_list <> num_params
-            then failwith "参数对不上啊!"
+            then failwith "参数对不上啊!" // FIXME: 我们需要自动Curry化 —— LYZH
             else param_ty_list, return_ty
     | TVar {contents = Link ty} -> match_fun_ty num_params ty
     | TVar ({contents = Unbound(id, level)} as tvar) ->
@@ -146,13 +146,51 @@ let rec match_fun_ty num_params x =
             tvar := Link (TArrow(param_ty_list, return_ty)) ;
             param_ty_list, return_ty
     | _ -> failwith "是函数吗?就往里怼?"
+*)
 
-// TODO: 坑自己填
-// 就让你调用一下会吧
-let rec infer (env: Env) level x =
+
+let rec fun_apply_infer (f: TypeExpr) (p: TypeExpr list) =
+    match f with
+    | TArrow ft ->
+        let rec f x y =
+            match x, y with
+            | x :: lx, y :: ly ->
+                unifier x y
+                f lx ly
+            | x1 :: [], [] -> x1
+            | _ -> failwith "很显然是参数数量没对"
+        f ft p
+    | _ -> failwith "是函数吗?就往里怼?"
+
+
+let get_literal_type v =
+    match v with
+    | Bool      _ -> "bool"
+    | Char      _ -> "char"
+    | Int       _ -> "i64"
+    | Uint      _ -> "u64"
+    | Float     _ -> "u64"
+    | String    _ -> "str"
+    | _ -> failwith "剩下这俩是啥:)"
+
+
+#nowarn "25"
+let rec infer (env: Env) level (x: Ast.Expr) =
     match x with
     | Variable name ->
         let res = env.TryFind name in
             match res with
                 | Some ty -> instantiate level ty
                 | None -> failwith "找不着啊!"
+    | Func (names, body) ->
+        let e = List.map (fun _ -> new_unbound_var level) names
+        in TArrow (List.append e [infer (List.zip names e |> Map) level body])
+    | FuncCall (callee, callparams) ->
+        let ft, pt = infer env level callee, List.map (infer env level) callparams
+        in fun_apply_infer ft pt
+    | LetIn (n, expr, body) ->
+        let e = [(n, infer env level expr)]
+        in infer (Map e) level body
+    | Lit v -> get_literal_type v |> TConst
+    | RowGet _ -> failwith "..."
+    | RowExtend _ -> failwith "..."
