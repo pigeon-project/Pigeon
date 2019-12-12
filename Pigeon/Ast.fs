@@ -1,4 +1,4 @@
-﻿module AST
+﻿module Ast
 
 //type TypeExpr =
 //    | TypeApply of string * TypeExpr list

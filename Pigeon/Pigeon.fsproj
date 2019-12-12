@@ -9,6 +9,7 @@
     <Compile Include="Ast.fs" />
     <Compile Include="Context.fs" />
     <Compile Include="TypeCheck.fs" />
+    <Compile Include="Infer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

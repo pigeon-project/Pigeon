@@ -1,6 +1,6 @@
 ﻿module Infer
 
-open AST
+open Ast
 
 let current_id = ref 0
 let next_id () =
@@ -57,8 +57,9 @@ let rec unifier ty1 ty2 =
             | ty,TVar({contents = Unbound(id,lv)} as tv) | TVar({contents = Unbound(id,lv)} as tv),ty ->
                 check_error id lv ty;
                 tv := Link ty          
-            | TRowExtend(lab1,f1,r1),TRowExtend(lab2,f2,r2) -> begin
-                let rest_r1_tvar_ref_opt = match r1 with
+            | TRowExtend(lab1,f1,r1),TRowExtend(lab2,f2,r2) ->
+                let rest_r1_tvar_ref_opt =
+                    match r1 with
                     | TVar ({contents = Unbound _} as tvar_ref) -> Some tvar_ref
                     | _ -> None
                 in
@@ -68,10 +69,10 @@ let rec unifier ty1 ty2 =
                             | _ -> ()
                      ;
                      unifier r1 rest_row2
-                end
             | _ , _ -> printf "wtm? 这俩不合适啊!"
-and rewrite_row row2 lab1 f1 = match row2 with
-    | TRowEmpt -> failwith "row does not contain label %A" lab1
+and rewrite_row row2 lab1 f1 =
+    match row2 with
+    | TRowEmpt -> failwithf "row does not contain label %A" lab1
     | TRowExtend(label2, field_ty2, rest_row2) when label2 = lab1 ->
         unifier f1 field_ty2
         rest_row2
@@ -86,7 +87,8 @@ and rewrite_row row2 lab1 f1 = match row2 with
     | _ -> failwith "row type expected"
 
 
-let rec generalize level x = match x with
+let rec generalize level x =
+    match x with
     | TVar {contents = Unbound(id, other_level)} when other_level > level ->
             TVar (ref (Generic id))
     | TApp(ty, ty_arg_list) ->
@@ -97,23 +99,23 @@ let rec generalize level x = match x with
     | TRow row -> TRow (generalize level row)
     | TRowExtend(label, field_ty, row) ->
             TRowExtend(label, generalize level field_ty, generalize level row)
-    | TVar {contents = Generic _} | TVar {contents = Unbound _} | TConst _ | TRowEmpt as ty -> ty
+    | TVar {contents = Generic _} | TVar {contents = Unbound _}
+    | TConst _ | TRowEmpt as ty -> ty
 
 
-let instantiate level ty = 
-    let id_var_map = Map [] : Map<Id,TypeExpr> in
-        let rec f ty = match ty with
+let instantiate level ty =
+    let id_var_map = ref (Map [] : Map<Id,TypeExpr>) in
+        let rec f ty =
+            match ty with
             | TConst _ -> ty
             | TVar {contents = Link ty} -> f ty
-            | TVar {contents = Generic id} -> begin
-                match id_var_map.TryFind id with
+            | TVar {contents = Generic id} ->
+                match (!id_var_map).TryFind id with
                 | Some ty -> ty
-                | None -> begin
+                | None ->
                     let var = new_unbound_var(level) 
-                    in id_var_map.Add(id,var);
+                    in id_var_map := (!id_var_map).Add(id,var);
                     var
-                    end
-                end
             | TVar {contents = Unbound _} -> ty
             | TApp(ty, ty_arg_list) ->
                 TApp(f ty, List.map f ty_arg_list)
@@ -128,10 +130,9 @@ let instantiate level ty =
 let rec match_fun_ty num_params x =
     match x with
     | TArrow(param_ty_list, return_ty) ->
-            if List.length param_ty_list <> num_params then
-                failwith "参数对不上啊!"
-            else
-                param_ty_list, return_ty
+            if List.length param_ty_list <> num_params
+            then failwith "参数对不上啊!"
+            else param_ty_list, return_ty
     | TVar {contents = Link ty} -> match_fun_ty num_params ty
     | TVar ({contents = Unbound(id, level)} as tvar) ->
             let param_ty_list = 
@@ -148,10 +149,10 @@ let rec match_fun_ty num_params x =
 
 // TODO: 坑自己填
 // 就让你调用一下会吧
-let rec infer env level x =
+let rec infer (env: Env) level x =
     match x with
     | Variable name ->
-        let res = env.TryLookUp name in
+        let res = env.TryFind name in
             match res with
                 | Some ty -> instantiate level ty
-                | Nothing -> failwith "找不着啊!"
+                | None -> failwith "找不着啊!"
