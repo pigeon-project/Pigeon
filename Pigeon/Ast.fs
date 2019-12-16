@@ -1,15 +1,18 @@
 ﻿module Ast
 
-type Id = int
-type Level = int
+type Id = uint64
+type Level = uint64
+
+type Pos = uint64
 
 type Name = string
 
 type TypeExpr =
+    | TypeConstructor of TVar list * TypeExpr
     | TypeApply of Name * TypeExpr list
-    | UnionType of Name * TypeExpr list
+    | UnionType of (Name * TypeExpr) list
+    | Record    of (Name * TypeExpr) list
     | TupleType of TypeExpr list
-    | Record    of TypeExpr list
     | Callable  of TypeExpr list
     | TypeName  of Name
     | TypeVar   of TVar

@@ -3,6 +3,11 @@
 //open System.IO
 open Ast
 
+type TypeContext = Map<Name, TypeExpr>
+
+type Context =
+    Context of valueContext: TypeContext * typeContext: TypeContext
+
 type ModuleContext = {
     Path        : string
     Father      : ModuleContext
