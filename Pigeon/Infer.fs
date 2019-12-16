@@ -1,196 +1,61 @@
 ﻿module Infer
 
 open Ast
+open Context
 
-let current_id = ref 0
-let next_id () =
-    let id = !current_id in
-    current_id := id + 1
-    id
-let reset_id = current_id := 0
+type CheckError =
+    | TypeError
+    | NameIsNotDefine of string
+    | TypeIsNotDefine of string
+    | NameIsNotTypeConstructor of string
+    | TypeApplyParamsLengthError
 
-let new_unbound_var level = TVar(ref(Unbound(next_id(),level)))
-let new_generic_var () = TVar(ref(Generic(next_id())))
+type CheckErrorAndPos = Pos list * CheckError
 
-type Env = Map<string,TypeExpr>
-let check_error tvar_id tvar_level ty =
-    let rec f tty =
-        match tty with
-        | TVar({contents = Link tty}) -> f tty
-        | TVar({contents = Generic _}) -> assert false
-        | TVar({contents = Unbound(other_id, other_level)} as other_tvar) ->
-            if other_id = tvar_id then
-                failwith "Error Recursive TypeExprpes!"
-            else
-                if other_level > tvar_level then
-                    other_tvar := Unbound(other_id,tvar_level)
-                else
-                    ()
-        | TApp(ty,ty_args) ->
-            f ty
-            List.iter f ty_args
-        | TArrow(ty_params) ->
-            List.iter f ty_params
-        | TRow r -> f r
-        | TRowExtend(lab,field_ty,row) -> f field_ty;f row
-        | TConst _ -> ()
-        | TRowEmpt -> ()
-    f ty
-let rec unifier ty1 ty2 =
-    if ty1 = ty2 then 
-        () 
-    else
-        match (ty1,ty2) with
-            | TConst n1,TConst n2 when n1 = n2 -> ()
-            | TApp(ty1,ty_args1),TApp(ty2,ty_args2) ->
-                unifier ty1 ty2;
-                List.iter2 unifier ty_args1 ty_args2
-            | TArrow(ty_params1),TArrow(ty_params2) ->
-                List.iter2 unifier ty_params1 ty_params2
-                //unifier ret_ty1 ret_ty2
-            | TRow r1,TRow r2 -> unifier r1 r2
-            | TRowEmpt,TRowEmpt -> ()
-            | TVar({contents = Link ty1}),ty2 | ty1,TVar({contents = Link ty2})-> unifier ty1 ty2
-            | TVar({contents = Unbound(id1,_)}),TVar({contents = Unbound(id2,_)}) when id1 = id2 ->
-                assert false (*怎么可能??!! 傻了逼了,他俩咋一样的?!*)
-            | ty,TVar({contents = Unbound(id,lv)} as tv) | TVar({contents = Unbound(id,lv)} as tv),ty ->
-                check_error id lv ty;
-                tv := Link ty          
-            | TRowExtend(lab1,f1,r1),TRowExtend(lab2,f2,r2) ->
-                let rest_r1_tvar_ref_opt =
-                    match r1 with
-                    | TVar ({contents = Unbound _} as tvar_ref) -> Some tvar_ref
-                    | _ -> None
-                in
-                    let rest_row2 = rewrite_row r2 lab1 f1 in
-                        match rest_r1_tvar_ref_opt with
-                            | Some {contents = Link _} -> failwith "recursive row!"
-                            | _ -> ()
-                     ;
-                     unifier r1 rest_row2
-            | _ , _ -> printf "wtm? 这俩不合适啊!"
-and rewrite_row row2 lab1 f1 =
-    match row2 with
-    | TRowEmpt -> failwithf "row does not contain label %A" lab1
-    | TRowExtend(label2, field_ty2, rest_row2) when label2 = lab1 ->
-        unifier f1 field_ty2
-        rest_row2
-    | TRowExtend(label2, field_ty2, rest_row2) ->
-        TRowExtend(label2, field_ty2, rewrite_row rest_row2 lab1 f1)
-    | TVar {contents = Link row2} -> rewrite_row row2 lab1 f1
-    | TVar ({contents = Unbound(id, level)} as tvar) ->
-        let rest_row2 = new_unbound_var level in
-        let ty2 = TRowExtend(lab1, f1, rest_row2) in
-        tvar := Link ty2 ;
-        rest_row2
-    | _ -> failwith "row type expected"
+type TypeResult = Result<TypeExpr, CheckErrorAndPos>
 
+exception InstantiateError of CheckError
 
-let rec generalize level x =
-    match x with
-    | TVar {contents = Unbound(id, other_level)} when other_level > level ->
-            TVar (ref (Generic id))
-    | TApp(ty, ty_arg_list) ->
-            TApp(generalize level ty, List.map (generalize level) ty_arg_list)
-    | TArrow(param_ty_list) ->
-            TArrow(List.map (generalize level) param_ty_list)
-    | TVar {contents = Link ty} -> generalize level ty
-    | TRow row -> TRow (generalize level row)
-    | TRowExtend(label, field_ty, row) ->
-            TRowExtend(label, generalize level field_ty, generalize level row)
-    | TVar {contents = Generic _} | TVar {contents = Unbound _}
-    | TConst _ | TRowEmpt as ty -> ty
+let rec Instantiate(tcontext: TypeContext) (expr: TypeExpr): TypeExpr =
+    match expr with
+    | TypeConstructor _ as r -> r
+    | TypeApply (n, tl) as r ->
+        match tcontext.TryFind n with
+        | Some x ->
+            match x with
+            | TypeConstructor (tp, _) ->
+                if tp.Length = tl.Length then r
+                else raise (InstantiateError TypeApplyParamsLengthError)
+            | _ -> raise (InstantiateError (NameIsNotTypeConstructor n))
+        | None -> raise (InstantiateError (TypeIsNotDefine n))
+    | UnionType tl ->
+        List.map (fun (n, v) -> (n, Instantiate tcontext v)) tl |> UnionType
+    | Record    tl ->
+        List.map (fun (n, v) -> (n, Instantiate tcontext v)) tl |> Record
+    | TupleType tl -> List.map (Instantiate tcontext) tl |> TupleType
+    | Callable  tl -> List.map (Instantiate tcontext) tl |> Callable
+    | TypeName _ as r -> r
+    | TypeVar   (Ref n) -> TypeName n |> Instantiate tcontext
+    | TypeVar   (Link e) -> Instantiate tcontext e
+    | TypeVar   (Id id) -> failwith "emmmmm..."
 
+let GetLitType e =
+    match e with
+    | Bool _    -> TypeName "bool"
+    | Char _    -> TypeName "char"
+    | Int _     -> TypeName "int64"
+    | Uint _    -> TypeName "uint64"
+    | Float _   -> TypeName "float64"
+    | String _  -> TypeName "str"
+    | RowEmpt _ -> TypeName "unit"
 
-let instantiate level ty =
-    let id_var_map = ref (Map [] : Map<Id,TypeExpr>) in
-        let rec f ty =
-            match ty with
-            | TConst _ -> ty
-            | TVar {contents = Link ty} -> f ty
-            | TVar {contents = Generic id} ->
-                match (!id_var_map).TryFind id with
-                | Some ty -> ty
-                | None ->
-                    let var = new_unbound_var(level) 
-                    in id_var_map := (!id_var_map).Add(id,var);
-                    var
-            | TVar {contents = Unbound _} -> ty
-            | TApp(ty, ty_arg_list) ->
-                TApp(f ty, List.map f ty_arg_list)
-            | TArrow(fun_ty_list) ->
-                TArrow(List.map f fun_ty_list)
-            | TRow row -> TRow (f row)
-            | TRowEmpt -> ty
-            | TRowExtend(label, field_ty, row) ->
-                        TRowExtend(label, f field_ty, f row)
-            in f ty
-
-(*
-let rec match_fun_ty num_params x =
-    match x with
-    | TArrow(param_ty_list, return_ty) ->
-            if List.length param_ty_list <> num_params
-            then failwith "参数对不上啊!" // FIXME: 我们需要自动Curry化 —— LYZH
-            else param_ty_list, return_ty
-    | TVar {contents = Link ty} -> match_fun_ty num_params ty
-    | TVar ({contents = Unbound(id, level)} as tvar) ->
-            let param_ty_list = 
-                let rec f = function
-                    | 0 -> []
-                    | n -> new_unbound_var level :: f (n - 1)
-                in
-                f num_params
-            in
-            let return_ty = new_unbound_var level in
-            tvar := Link (TArrow(param_ty_list, return_ty)) ;
-            param_ty_list, return_ty
-    | _ -> failwith "是函数吗?就往里怼?"
-*)
-
-
-let rec fun_apply_infer (f: TypeExpr) (p: TypeExpr list) =
-    match f with
-    | TArrow ft ->
-        let rec f x y =
-            match x, y with
-            | x :: lx, y :: ly ->
-                unifier x y
-                f lx ly
-            | x1 :: [], [] -> x1
-            | _ -> failwith "很显然是参数数量没对"
-        f ft p
-    | _ -> failwith "是函数吗?就往里怼?"
-
-
-let get_literal_type v =
-    match v with
-    | Bool      _ -> "bool"
-    | Char      _ -> "char"
-    | Int       _ -> "i64"
-    | Uint      _ -> "u64"
-    | Float     _ -> "u64"
-    | String    _ -> "str"
-    | _ -> failwith "剩下这俩是啥:)"
-
-
-#nowarn "25"
-let rec infer (env: Env) level (x: Ast.Expr) =
-    match x with
-    | Variable name ->
-        let res = env.TryFind name in
-            match res with
-                | Some ty -> instantiate level ty
-                | None -> failwith "找不着啊!"
-    | Func (names, body) ->
-        let e = List.map (fun _ -> new_unbound_var level) names
-        in TArrow (List.append e [infer (List.zip names e |> Map) level body])
-    | FuncCall (callee, callparams) ->
-        let ft, pt = infer env level callee, List.map (infer env level) callparams
-        in fun_apply_infer ft pt
-    | LetIn (n, expr, body) ->
-        let e = [(n, infer env level expr)]
-        in infer (Map e) level body
-    | Lit v -> get_literal_type v |> TConst
-    | RowGet _ -> failwith "..."
-    | RowExtend _ -> failwith "..."
+let Infer (Context (vc, tc): Context) (expr: Expr): TypeResult =
+    match expr with
+    | Variable n ->
+        match vc.TryFind n with
+        | Some x ->
+            try Instantiate tc x |> Ok
+            with | :? InstantiateError as x -> Error ([], x.Data0)
+        | None -> Error ([], NameIsNotDefine n)
+    | Lit v -> Ok (GetLitType v)
+    | _ -> failwith "还没实现呢慌什么"
